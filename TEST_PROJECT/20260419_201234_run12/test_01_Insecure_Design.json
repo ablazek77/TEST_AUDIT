@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 12,
+    "test_run_result_id": 23,
+    "test_id": 33,
+    "test_name": "Insecure Design",
+    "test_description": "Checks for architectural and design weaknesses that lead to security risks.",
+    "generated_at": "2026-04-19T20:12:05Z",
+    "started_at": "2026-04-19T20:11:58Z",
+    "completed_at": "2026-04-19T20:12:05Z",
+    "tokens_used": 8296,
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "FAZIT",
+    "customer": "WITTE Automotive"
+  },
+  "analysis": {
+    "test_status": "no_findings",
+    "summary": "The analyzed source code is an Arduino-based IR remote filter application that receives, filters, and retransmits infrared signals for home automation purposes. This is embedded firmware running on a microcontroller with no network connectivity, user authentication, account management, session handling, or any web/API surface. The security concepts outlined in the test instructions (rate limiting, password reset, account lockout, authentication, remember-me tokens, trust boundaries for client-server) are entirely inapplicable to this type of embedded IR relay device. No insecure design vulnerabilities relevant to the provided test criteria were identified.",
+    "findings": [],
+    "severity_counts": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    }
+  }
+}

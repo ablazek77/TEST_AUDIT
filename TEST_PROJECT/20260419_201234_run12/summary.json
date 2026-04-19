@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 12,
+    "generated_at": "2026-04-19T20:12:05Z",
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "FAZIT",
+    "customer": "WITTE Automotive",
+    "tests_count": 1,
+    "summary_tokens_used": 1230
+  },
+  "summary": {
+    "overall_status": "clean",
+    "summary": "The SAST analysis of the RemoteFilter repository (branch: upload) for WITTE Automotive's FAZIT project found no security vulnerabilities across all conducted tests. The codebase is an Arduino-based embedded IR remote filter application that receives, filters, and retransmits infrared signals for home automation purposes. Given the nature of the firmware — running on a microcontroller with no network connectivity, authentication surface, or API layer — the applicable attack surface is minimal. No insecure design patterns or other vulnerability classes were identified.",
+    "severity_counts": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    },
+    "top_findings": [],
+    "test_results": [
+      {
+        "test_name": "Insecure Design",
+        "status": "no_findings",
+        "findings_count": 0,
+        "summary": "No insecure design vulnerabilities were identified. The embedded firmware nature of the application renders common web/API-based design weaknesses (authentication, session management, rate limiting, etc.) entirely inapplicable."
+      }
+    ]
+  }
+}
