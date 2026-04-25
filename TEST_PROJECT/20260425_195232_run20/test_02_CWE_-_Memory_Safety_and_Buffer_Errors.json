@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 20,
+    "test_run_result_id": 38,
+    "test_id": 35,
+    "test_name": "CWE - Memory Safety and Buffer Errors",
+    "test_description": "Checks for buffer overflows, use-after-free, null pointer dereference and integer overflow issues.",
+    "generated_at": "2026-04-25T18:44:34Z",
+    "started_at": "2026-04-25T18:43:51Z",
+    "completed_at": "2026-04-25T18:44:34Z",
+    "tokens_used": 10509,
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "Secret project",
+    "customer": "Best Automotive s.r.o."
+  },
+  "analysis": {
+    "test_status": "findings_found",
+    "summary": "Analysis of the IRRemoteFilter Arduino sketch reveals several memory safety concerns, primarily centered around potential buffer overflow in the raw IR data storage path, an unchecked null pointer from IrReceiver.read(), and integer type issues with signed integers used for timeout counters and buffer lengths. The PinDefinitionsAndMore.h file contains only preprocessor definitions and no exploitable memory safety issues. The most significant risk is the potential out-of-bounds write when storing raw IR data without validating the raw data length against the fixed-size buffer.",
+    "findings": [
+      {
+        "id": 1,
+        "severity": "High",
+        "title": "Potential Out-of-Bounds Write in Raw IR Data Storage",
+        "description": "In the storeCode() function, IrReceiver.compensateAndStoreIRResultInArray(sStoredIRData.rawCode) is called to store raw IR data into a fixed-size buffer rawCode[RAW_BUFFER_LENGTH]. The rawCodeLength is set to IrReceiver.decodedIRData.rawDataPtr->rawlen - 1, but there is no bounds check to ensure this length does not exceed RAW_BUFFER_LENGTH before calling compensateAndStoreIRResultInArray. If the received raw IR signal has more entries than RAW_BUFFER_LENGTH, the copy operation may write beyond the end of the rawCode array, corrupting adjacent memory in the sStoredIRData struct or global memory.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "175-183",
+        "code_snippet": "sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1;\n/*\n * Store the current raw data in a dedicated array for later usage\n */\nIrReceiver.compensateAndStoreIRResultInArray(sStoredIRData.rawCode);",
+        "impact": "An attacker with physical access who can transmit a crafted IR signal with a raw length exceeding RAW_BUFFER_LENGTH could cause a heap/global buffer overflow, potentially corrupting program state or causing undefined behavior on the Arduino.",
+        "remediation": "Add a bounds check before storing: if (IrReceiver.decodedIRData.rawDataPtr->rawlen - 1 <= RAW_BUFFER_LENGTH) { sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1; IrReceiver.compensateAndStoreIRResultInArray(sStoredIRData.rawCode); } else { /* handle error */ }",
+        "finding_confidence": 72,
+        "remediation_confidence": 80
+      },
+      {
+        "id": 2,
+        "severity": "High",
+        "title": "NULL Pointer Dereference from IrReceiver.read()",
+        "description": "In the loop() function at programState==1, IrReceiver.read() is called and its return value is passed directly to storeCode() without any null check. If IrReceiver.read() returns a null pointer (which is possible if no data is available or an internal error occurs), storeCode() will dereference the null pointer when accessing aIRReceivedData->flags, causing a crash or undefined behavior.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "103-106",
+        "code_snippet": "if (IrReceiver.available()) {\n  storeCode(IrReceiver.read());\n  Serial.println(F(\"e6F675I received\"));\n  IrReceiver.resume();",
+        "impact": "A null pointer dereference will cause the Arduino to crash or reset, leading to a denial of service. On some platforms this could lead to undefined behavior.",
+        "remediation": "Store the result of IrReceiver.read() in a local pointer and check for null before passing to storeCode(): IRData *data = IrReceiver.read(); if (data != nullptr) { storeCode(data); }",
+        "finding_confidence": 60,
+        "remediation_confidence": 85
+      },
+      {
+        "id": 3,
+        "severity": "Medium",
+        "title": "Signed Integer Used for Buffer Length (rawCodeLength) Passed to sendRaw",
+        "description": "The rawCodeLength field is declared as uint8_t, which is correct, but the rawlen value from the IRremote library is typically a uint16_t or similar. The subtraction rawlen - 1 could underflow if rawlen is 0, resulting in a very large value being stored in rawCodeLength (wrapping to 255 for uint8_t). This large length is then passed to IrSender.sendRaw(), potentially causing it to read far beyond the rawCode buffer.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "179",
+        "code_snippet": "sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1;",
+        "impact": "If rawlen is 0, the subtraction underflows, and sendRaw is called with a length of 255, causing it to read 255 bytes from a buffer that may contain far fewer valid entries, leading to out-of-bounds reads.",
+        "remediation": "Check that rawlen > 0 before subtracting: if (IrReceiver.decodedIRData.rawDataPtr->rawlen > 0) { sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1; }",
+        "finding_confidence": 65,
+        "remediation_confidence": 85
+      },
+      {
+        "id": 4,
+        "severity": "Medium",
+        "title": "Signed Integer Underflow in Timeout Counter",
+        "description": "The variable timeOut is declared as a signed int and initialized to READ_TIMEOUT (30000). It is decremented by 1 each loop iteration in programState==1. The check is timeOut==0, but if the decrement somehow skips zero (e.g., due to timing or if the initial value is odd and decremented by more than 1 in some code path), timeOut could go negative and continue decrementing indefinitely, preventing the timeout from ever triggering. Additionally, READ_TIMEOUT is declared as int (signed), and on platforms where int is 16-bit (AVR), 30000 is close to the maximum value of 32767, leaving little margin.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "100-120",
+        "code_snippet": "static int timeOut = 0;\n...\ntimeOut = READ_TIMEOUT;\n...\ntimeOut--;\n...\nif(timeOut==0) {",
+        "impact": "If the timeout counter underflows or skips zero, the IR receiver may never reset, causing the device to hang in programState==1 indefinitely (denial of service).",
+        "remediation": "Use unsigned int or uint32_t for timeOut, and change the check to timeOut <= 0 or timeOut == 0 with careful logic to ensure it cannot skip zero. Also consider using millis() for timing instead of a decrement counter.",
+        "finding_confidence": 50,
+        "remediation_confidence": 75
+      },
+      {
+        "id": 5,
+        "severity": "Low",
+        "title": "Use of Signed int for Variables Representing Unsigned Quantities",
+        "description": "Several variables such as DELAY_BETWEEN_REPEAT, NEXT_DELAY_BETWEEN_REPEAT, FIRST_DELAY_BETWEEN_REPEAT, POWER_COMMAND_DELAY, POWER_DELAY_LOCK, and READ_TIMEOUT are declared as int (signed) but represent non-negative delay/timeout values. If any arithmetic on these values produces a negative result (e.g., due to unexpected input or logic error), passing them to delay() or using them in comparisons could produce unexpected behavior.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "30-37",
+        "code_snippet": "int DELAY_BETWEEN_REPEAT = 0;\nint NEXT_DELAY_BETWEEN_REPEAT = 100;\nint FIRST_DELAY_BETWEEN_REPEAT = 600;\nint POWER_COMMAND_DELAY = 600;\nint POWER_DELAY_LOCK = 0;\nint READ_TIMEOUT = 30000;",
+        "impact": "Passing a negative value to delay() on Arduino results in a very long delay (since delay() takes unsigned long), potentially hanging the device.",
+        "remediation": "Declare these variables as unsigned int or uint16_t/uint32_t as appropriate to their intended range, and add validation before use.",
+        "finding_confidence": 45,
+        "remediation_confidence": 80
+      }
+    ],
+    "severity_counts": {
+      "critical": 0,
+      "high": 2,
+      "medium": 2,
+      "low": 1,
+      "info": 0
+    }
+  }
+}

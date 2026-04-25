@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 20,
+    "generated_at": "2026-04-25T18:44:34Z",
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "Secret project",
+    "customer": "Best Automotive s.r.o."
+  },
+  "summary": {
+    "total_occurrences": 8,
+    "files_affected": 1,
+    "by_method": {
+      "manual": 8
+    }
+  },
+  "entries": [
+    {
+      "placeholder": "e6F675I",
+      "original_string": "IR code",
+      "detection_method": "manual",
+      "file_path": "IRRemoteFilter.ino",
+      "occurrence_count": 8,
+      "line_numbers": "2,3,101,108,112,185,188,191"
+    }
+  ]
+}

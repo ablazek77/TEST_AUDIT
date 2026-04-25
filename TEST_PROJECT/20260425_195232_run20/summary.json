@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 20,
+    "generated_at": "2026-04-25T18:44:34Z",
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "Secret project",
+    "customer": "Best Automotive s.r.o.",
+    "tests_count": 2,
+    "summary_tokens_used": 5167
+  },
+  "summary": {
+    "overall_status": "high",
+    "summary": "The RemoteFilter repository (upload branch) is an Arduino-based embedded firmware application for IR signal filtering and retransmission. SAST analysis identified 5 findings across memory safety categories, with no insecure design issues applicable to this embedded context. The most critical concerns are a potential out-of-bounds write in the raw IR data storage path and a possible null pointer dereference when processing received IR data, both of which could be triggered by a physically present attacker sending crafted IR signals. Additional medium and low severity issues involve integer underflow risks and use of signed types for unsigned quantities, which could lead to denial-of-service conditions on the microcontroller.",
+    "severity_counts": {
+      "critical": 0,
+      "high": 2,
+      "medium": 2,
+      "low": 1,
+      "info": 0
+    },
+    "top_findings": [
+      {
+        "severity": "High",
+        "title": "Potential Out-of-Bounds Write in Raw IR Data Storage",
+        "description": "In storeCode(), IrReceiver.compensateAndStoreIRResultInArray(sStoredIRData.rawCode) copies raw IR data into a fixed-size buffer rawCode[RAW_BUFFER_LENGTH] without first validating that rawCodeLength does not exceed RAW_BUFFER_LENGTH. A crafted IR signal with more raw entries than the buffer can hold may cause a global/stack buffer overflow, corrupting adjacent memory.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Add an explicit bounds check before the copy: if (IrReceiver.decodedIRData.rawDataPtr->rawlen - 1 <= RAW_BUFFER_LENGTH) { sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1; IrReceiver.compensateAndStoreIRResultInArray(sStoredIRData.rawCode); } else { /* handle/discard oversized frame */ }",
+        "finding_confidence": 72,
+        "remediation_confidence": 80
+      },
+      {
+        "severity": "High",
+        "title": "NULL Pointer Dereference from IrReceiver.read()",
+        "description": "In the main loop() at programState==1, the return value of IrReceiver.read() is passed directly to storeCode() without a null check. If the library returns nullptr due to no available data or an internal error, storeCode() will dereference the null pointer when accessing aIRReceivedData->flags, causing a crash or device reset.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Store the result in a local pointer and guard with a null check before use: IRData *data = IrReceiver.read(); if (data != nullptr) { storeCode(data); IrReceiver.resume(); }",
+        "finding_confidence": 60,
+        "remediation_confidence": 85
+      },
+      {
+        "severity": "Medium",
+        "title": "Integer Underflow in rawCodeLength Calculation",
+        "description": "The expression rawlen - 1 is computed without checking that rawlen > 0. If rawlen is 0, the subtraction underflows the uint8_t assignment to 255, and the inflated length is subsequently passed to IrSender.sendRaw(), causing it to read 255 bytes from a potentially much smaller valid buffer region.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Guard the subtraction: if (IrReceiver.decodedIRData.rawDataPtr->rawlen > 0) { sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1; } else { /* discard frame */ }",
+        "finding_confidence": 65,
+        "remediation_confidence": 85
+      },
+      {
+        "severity": "Medium",
+        "title": "Signed Integer Underflow in Timeout Counter",
+        "description": "The timeOut variable is a signed int decremented each loop iteration and compared with == 0. If the counter skips zero (e.g., due to multi-unit decrements or platform-specific behavior) it goes negative and the timeout never fires, potentially hanging the device in programState==1 indefinitely. On 16-bit AVR platforms, the initial value of 30000 also approaches the signed int maximum of 32767.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Use uint32_t for timeOut, change the comparison to timeOut == 0 with a decrement-then-check pattern, or preferably replace the decrement counter entirely with millis()-based elapsed time tracking for robustness.",
+        "finding_confidence": 50,
+        "remediation_confidence": 75
+      },
+      {
+        "severity": "Low",
+        "title": "Signed int Used for Non-Negative Delay and Timeout Constants",
+        "description": "Variables such as DELAY_BETWEEN_REPEAT, NEXT_DELAY_BETWEEN_REPEAT, FIRST_DELAY_BETWEEN_REPEAT, POWER_COMMAND_DELAY, POWER_DELAY_LOCK, and READ_TIMEOUT are declared as signed int but represent non-negative durations. If any arithmetic yields a negative value, passing it to delay() (which accepts unsigned long) results in an extremely long delay, effectively hanging the device.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Declare these variables as uint16_t or uint32_t as appropriate to their intended range, and add range validation before passing values to delay() or using them in timing logic.",
+        "finding_confidence": 45,
+        "remediation_confidence": 80
+      }
+    ],
+    "test_results": [
+      {
+        "test_name": "Insecure Design",
+        "status": "no_findings",
+        "findings_count": 0,
+        "summary": "No insecure design findings were identified. Concepts such as authentication, session management, rate limiting, and API security are not applicable to this embedded IR relay firmware with no network connectivity or user-facing interfaces."
+      },
+      {
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "status": "findings_found",
+        "findings_count": 5,
+        "summary": "Five memory safety issues were identified including two High severity findings (out-of-bounds write in raw IR buffer storage and potential null pointer dereference), two Medium severity integer underflow risks, and one Low severity issue with signed integer types used for non-negative delay constants."
+      }
+    ]
+  }
+}
