@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 21,
+    "test_run_result_id": 39,
+    "test_id": 33,
+    "test_name": "Insecure Design",
+    "test_description": "Checks for architectural and design weaknesses that lead to security risks.",
+    "generated_at": "2026-04-25T18:47:15Z",
+    "started_at": "2026-04-25T18:47:09Z",
+    "completed_at": "2026-04-25T18:47:15Z",
+    "tokens_used": 8338,
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "Secret project",
+    "customer": "Best Automotive s.r.o."
+  },
+  "analysis": {
+    "test_status": "no_findings",
+    "summary": "The analyzed source code is an Arduino-based IR remote filter application that receives IR signals, filters certain codes, and retransmits them to control a Dimplex electric fireplace. This is embedded firmware with no network connectivity, authentication mechanisms, user accounts, password flows, API endpoints, or web interfaces. None of the insecure design vulnerability categories specified in the test instructions (rate limiting, password reset, business logic flaws, account lockout, authentication bypass, remember-me tokens, trust boundary violations) are applicable to this type of embedded IR relay firmware.",
+    "findings": [],
+    "severity_counts": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    }
+  }
+}

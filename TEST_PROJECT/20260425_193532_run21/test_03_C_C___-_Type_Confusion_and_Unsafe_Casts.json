@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 21,
+    "test_run_result_id": 41,
+    "test_id": 38,
+    "test_name": "C/C++ - Type Confusion and Unsafe Casts",
+    "test_description": "Detects type confusion from C-style casts, reinterpret_cast, union misuse, and strict aliasing violations.",
+    "generated_at": "2026-04-25T18:48:35Z",
+    "started_at": "2026-04-25T18:47:54Z",
+    "completed_at": "2026-04-25T18:48:35Z",
+    "tokens_used": 10473,
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "Secret project",
+    "customer": "Best Automotive s.r.o."
+  },
+  "analysis": {
+    "test_status": "findings_found",
+    "summary": "The analyzed Arduino sketch (IRRemoteFilter.ino) and its companion header (PinDefinitionsAndMore.h) are primarily embedded C/C++ code for an IR remote filter. The code does not contain classic type-confusion or unsafe-cast vulnerabilities as described in the test instructions (no reinterpret_cast, union type-punning, dynamic_cast, or function-pointer cast misuse). However, several lower-severity issues were identified: integer type mismatches (signed int used for values that should be unsigned or size-typed), a potential null-pointer dereference when IrReceiver.read() returns null, and use of magic numbers for protocol/command comparisons without validation. No critical type-confusion vulnerabilities were found.",
+    "findings": [
+      {
+        "id": 1,
+        "severity": "Medium",
+        "title": "Unchecked Return Value of IrReceiver.read() Before Dereference",
+        "description": "In the loop() function, IrReceiver.read() is called and its return value is passed directly to storeCode() without checking whether it is NULL/nullptr. If the IRremote library returns a null pointer (e.g., due to an internal error or race condition), storeCode() will dereference it at the first flag check (aIRReceivedData->flags), causing undefined behavior or a crash.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "100",
+        "code_snippet": "storeCode(IrReceiver.read());",
+        "impact": "Null pointer dereference leading to undefined behavior, potential crash or watchdog reset on the microcontroller.",
+        "remediation": "Check the return value before passing it to storeCode():\n  IRData *data = IrReceiver.read();\n  if (data != nullptr) { storeCode(data); }",
+        "finding_confidence": 65,
+        "remediation_confidence": 90
+      },
+      {
+        "id": 2,
+        "severity": "Low",
+        "title": "Signed Integer Used for Timeout Counter with Potential Underflow",
+        "description": "The variable 'timeOut' is declared as 'static int' and initialized to READ_TIMEOUT (30000). It is decremented unconditionally in the loop with 'timeOut--'. On platforms where int is 16-bit (e.g., AVR ATmega), the value 30000 is close to INT16_MAX (32767), and the decrement loop will eventually wrap to a large negative value if the zero-check is missed, causing the timeout logic to behave incorrectly. Additionally, comparing 'timeOut < INIT_REPEAT_DELAY_TIME' (29800) with a signed int on a 16-bit platform is safe, but the design is fragile.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "88-120",
+        "code_snippet": "static int timeOut = 0;\n...\ntimeOut = READ_TIMEOUT; // 30000\n...\ntimeOut--;\nif(timeOut<INIT_REPEAT_DELAY_TIME) { ... }\nif(timeOut==0) { ... }",
+        "impact": "On 16-bit AVR platforms, READ_TIMEOUT=30000 fits in a signed int, but the decrement-to-zero logic could be bypassed if the counter wraps or if the exact zero is skipped due to timing, causing the timeout to never trigger and the receiver to hang.",
+        "remediation": "Use 'unsigned int' or 'uint32_t' for timeOut and READ_TIMEOUT, and use a >= 0 or countdown-to-zero pattern with an explicit check. Consider using millis() for time-based timeouts instead of a decrement counter.",
+        "finding_confidence": 55,
+        "remediation_confidence": 80
+      },
+      {
+        "id": 3,
+        "severity": "Low",
+        "title": "Signed/Unsigned Mismatch: int Variables Used for Pin Numbers and Delays",
+        "description": "Variables such as SEND_BUTTON_PIN, STATUS_PIN, DELAY_BETWEEN_REPEAT, NEXT_DELAY_BETWEEN_REPEAT, FIRST_DELAY_BETWEEN_REPEAT, POWER_COMMAND_DELAY, POWER_DELAY_LOCK, READ_TIMEOUT, and INIT_REPEAT_DELAY_TIME are all declared as 'int' (signed). They are passed to Arduino API functions (e.g., delay(), pinMode(), digitalWrite()) that expect unsigned types (uint8_t for pins, unsigned long for delay). While implicit conversion handles most cases, a negative value (e.g., if POWER_DELAY_LOCK underflows or is set incorrectly) passed to delay() would be interpreted as a very large unsigned delay, freezing the device.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "30-38",
+        "code_snippet": "int DELAY_BETWEEN_REPEAT = 0;\nint NEXT_DELAY_BETWEEN_REPEAT = 100;\nint FIRST_DELAY_BETWEEN_REPEAT = 600;\nint POWER_COMMAND_DELAY = 600;\nint POWER_DELAY_LOCK = 0;\nint READ_TIMEOUT = 30000;\nint INIT_REPEAT_DELAY_TIME = 29800;",
+        "impact": "If any of these values become negative (e.g., through logic errors), passing them to delay() or similar functions causes implicit conversion to a large unsigned value, potentially hanging the device for an extremely long time.",
+        "remediation": "Declare these variables with appropriate unsigned types: 'uint8_t' for pin numbers, 'unsigned int' or 'uint16_t' for delays and counters, and 'uint32_t' for larger timeout values.",
+        "finding_confidence": 60,
+        "remediation_confidence": 85
+      },
+      {
+        "id": 4,
+        "severity": "Low",
+        "title": "Magic Number Comparisons for Protocol Commands Without Range Validation",
+        "description": "The code compares sStoredIRData.receivedIRData.command == 70 and sStoredIRData.receivedIRData.address == 4 using magic numbers. The 'command' and 'address' fields are likely uint16_t or similar unsigned types from the IRremote library. There is no validation that these values are within expected ranges before use, and the comparison with signed int literals (70, 4) involves implicit signed-to-unsigned promotion. While not a direct type confusion, this pattern is fragile and could mask logic errors.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "143-148",
+        "code_snippet": "if (sStoredIRData.receivedIRData.address==4) {\n...\nif(sStoredIRData.receivedIRData.command==70) {",
+        "impact": "Low risk of logic errors if the underlying types change or if values are misinterpreted due to implicit type promotion. No direct security impact in an embedded IR filter context.",
+        "remediation": "Define named constants for magic numbers (e.g., '#define LG_TV_ADDRESS 4U' and '#define POWER_COMMAND 70U') and use the correct unsigned literal suffix to avoid implicit signed/unsigned comparison warnings.",
+        "finding_confidence": 45,
+        "remediation_confidence": 75
+      },
+      {
+        "id": 5,
+        "severity": "Info",
+        "title": "rawCodeLength Stored as uint8_t May Truncate rawlen Value",
+        "description": "In storeCode(), the raw code length is stored as: sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1. The field rawCodeLength is uint8_t (max 255), while rawlen may be a larger type. If rawlen exceeds 256, the subtraction result is silently truncated when stored in uint8_t, leading to an incorrect length being used in sendCode() when calling IrSender.sendRaw().",
+        "file": "IRRemoteFilter.ino",
+        "lines": "196-197",
+        "code_snippet": "sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1;",
+        "impact": "If rawlen > 256, the stored length is truncated, causing sendRaw() to send an incorrect number of timing entries, resulting in a malformed IR signal being transmitted.",
+        "remediation": "Add a bounds check before assignment: if (IrReceiver.decodedIRData.rawDataPtr->rawlen - 1 <= RAW_BUFFER_LENGTH) { sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1; } else { /* handle error */ }. Also consider using a wider type for rawCodeLength if RAW_BUFFER_LENGTH can exceed 255.",
+        "finding_confidence": 50,
+        "remediation_confidence": 80
+      }
+    ],
+    "severity_counts": {
+      "critical": 0,
+      "high": 0,
+      "medium": 1,
+      "low": 3,
+      "info": 1
+    }
+  }
+}

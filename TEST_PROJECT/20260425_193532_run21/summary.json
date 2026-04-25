@@ -1,0 +1,136 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 21,
+    "generated_at": "2026-04-25T18:48:35Z",
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "Secret project",
+    "customer": "Best Automotive s.r.o.",
+    "tests_count": 3,
+    "summary_tokens_used": 8421
+  },
+  "summary": {
+    "overall_status": "high",
+    "summary": "The RemoteFilter repository contains an Arduino-based IR remote filter firmware (IRRemoteFilter.ino) for controlling a Dimplex electric fireplace. Static analysis identified no critical vulnerabilities, but two high-severity memory safety issues were found: a potential buffer overflow in raw IR code storage and a null pointer dereference on the IrReceiver.read() return value. Several medium and low-severity issues were also identified, including integer underflow in raw length calculation, signed integer misuse in timeout counters, and signed/unsigned type mismatches throughout. The codebase has no network attack surface, so exploitability is limited to malformed IR signal inputs, but the issues could cause device crashes or incorrect behavior in embedded operation.",
+    "severity_counts": {
+      "critical": 0,
+      "high": 2,
+      "medium": 3,
+      "low": 4,
+      "info": 1
+    },
+    "top_findings": [
+      {
+        "severity": "High",
+        "title": "Potential Buffer Overflow in Raw IR Code Storage",
+        "description": "In storeCode(), when the protocol is UNKNOWN, rawCodeLength is set to rawlen - 1 and compensateAndStoreIRResultInArray() is called with the rawCode buffer (sized RAW_BUFFER_LENGTH). If rawlen exceeds RAW_BUFFER_LENGTH, the function writes beyond the bounds of the rawCode array, corrupting adjacent global variables or causing undefined behavior.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Add a bounds check before calling compensateAndStoreIRResultInArray: if (sStoredIRData.rawCodeLength > RAW_BUFFER_LENGTH) { sStoredIRData.rawCodeLength = RAW_BUFFER_LENGTH; } or return early with an error if the raw data exceeds the buffer size.",
+        "finding_confidence": 72,
+        "remediation_confidence": 85
+      },
+      {
+        "severity": "High",
+        "title": "NULL Pointer Dereference on IrReceiver.read() Return Value",
+        "description": "In loop(), IrReceiver.read() return value is passed directly to storeCode() without a NULL check. If the library returns NULL due to an error or race condition, storeCode() will dereference it at aIRReceivedData->flags, causing a null pointer dereference and likely a microcontroller crash or reset.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Store the return value in a local variable and check before use: IRData *data = IrReceiver.read(); if (data != NULL) { storeCode(data); }",
+        "finding_confidence": 65,
+        "remediation_confidence": 90
+      },
+      {
+        "severity": "Medium",
+        "title": "Integer Underflow in rawCodeLength Calculation",
+        "description": "In storeCode(), rawCodeLength is assigned rawlen - 1 where rawlen is an unsigned type. If rawlen is 0 (malformed or empty IR data), unsigned underflow produces a very large value (e.g., 65535). When truncated to uint8_t, it wraps to 255, potentially causing compensateAndStoreIRResultInArray to overflow the rawCode buffer.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Add a guard before the subtraction: if (IrReceiver.decodedIRData.rawDataPtr->rawlen == 0) { return; } to prevent underflow.",
+        "finding_confidence": 60,
+        "remediation_confidence": 88
+      },
+      {
+        "severity": "Medium",
+        "title": "Unchecked Return Value of IrReceiver.read() Before Dereference (Type Safety)",
+        "description": "Duplicate finding confirmed by a second test: IrReceiver.read() return value is used without NULL/nullptr check in storeCode(), risking null pointer dereference and undefined behavior or watchdog reset.",
+        "test_name": "C/C++ - Type Confusion and Unsafe Casts",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Check the return value before passing to storeCode(): IRData *data = IrReceiver.read(); if (data != nullptr) { storeCode(data); }",
+        "finding_confidence": 65,
+        "remediation_confidence": 90
+      },
+      {
+        "severity": "Medium",
+        "title": "Signed Integer Overflow/Underflow Risk in Timeout Counter",
+        "description": "The timeout counter and related constants (READ_TIMEOUT=30000, INIT_REPEAT_DELAY_TIME=29800) are declared as signed int. On 16-bit AVR platforms (INT_MAX=32767), these values are valid but leave minimal margin. If the counter skips zero (timeout check uses ==0), it decrements into negative values indefinitely, causing the state machine to hang in programState==1.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Use unsigned int or uint32_t for timeout counters and constants. Change the timeout check from timeOut==0 to timeOut<=0. Consider using millis()-based timing instead of decrement counters.",
+        "finding_confidence": 55,
+        "remediation_confidence": 80
+      },
+      {
+        "severity": "Low",
+        "title": "Unchecked Null Dereference of rawDataPtr",
+        "description": "In storeCode(), IrReceiver.decodedIRData.rawDataPtr is dereferenced to access rawlen without a prior null check. If rawDataPtr is null, this causes undefined behavior and likely a device crash.",
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Add a null guard: if (IrReceiver.decodedIRData.rawDataPtr == NULL) { return; } before accessing rawDataPtr members.",
+        "finding_confidence": 50,
+        "remediation_confidence": 85
+      },
+      {
+        "severity": "Low",
+        "title": "Signed/Unsigned Mismatch for Pin Numbers and Delay Parameters",
+        "description": "Configuration variables for pins, delays, and timeouts are declared as signed int but passed to Arduino API functions expecting unsigned types. A negative value (due to logic error) passed to delay() would be implicitly converted to a very large unsigned value, potentially freezing the device.",
+        "test_name": "C/C++ - Type Confusion and Unsafe Casts",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Use appropriate unsigned types: uint8_t for pin numbers, uint16_t or uint32_t for delays and counters.",
+        "finding_confidence": 60,
+        "remediation_confidence": 85
+      },
+      {
+        "severity": "Low",
+        "title": "Magic Number Comparisons for IR Protocol Commands Without Range Validation",
+        "description": "IR command and address comparisons use magic integer literals (e.g., command==70, address==4) without named constants or range validation. The implicit signed-to-unsigned promotion is benign here but the pattern is fragile and may mask logic errors if underlying types change.",
+        "test_name": "C/C++ - Type Confusion and Unsafe Casts",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Define named constants with the correct unsigned literal suffix (e.g., #define LG_TV_ADDRESS 4U, #define POWER_COMMAND 70U) to improve clarity and avoid implicit signed/unsigned comparison warnings.",
+        "finding_confidence": 45,
+        "remediation_confidence": 75
+      },
+      {
+        "severity": "Info",
+        "title": "rawCodeLength uint8_t Field May Silently Truncate rawlen",
+        "description": "The rawCodeLength field is uint8_t (max 255). If rawlen exceeds 256, the assignment silently truncates the value, causing sendRaw() in sendCode() to transmit an incorrect number of timing entries and produce a malformed IR signal.",
+        "test_name": "C/C++ - Type Confusion and Unsafe Casts",
+        "file": "IRRemoteFilter.ino",
+        "remediation": "Add a bounds check before assignment and consider widening rawCodeLength to uint16_t if RAW_BUFFER_LENGTH can exceed 255.",
+        "finding_confidence": 50,
+        "remediation_confidence": 80
+      }
+    ],
+    "test_results": [
+      {
+        "test_name": "Insecure Design",
+        "status": "no_findings",
+        "findings_count": 0,
+        "summary": "No insecure design issues found. The firmware has no network connectivity, authentication flows, API endpoints, or web interfaces, making all insecure design categories inapplicable."
+      },
+      {
+        "test_name": "CWE - Memory Safety and Buffer Errors",
+        "status": "findings_found",
+        "findings_count": 5,
+        "summary": "Found 2 high-severity issues (buffer overflow in raw IR storage, null pointer dereference on IrReceiver.read()), 2 medium-severity issues (integer underflow in length calculation, signed timeout counter risks), and 1 low-severity issue (unchecked rawDataPtr dereference)."
+      },
+      {
+        "test_name": "C/C++ - Type Confusion and Unsafe Casts",
+        "status": "findings_found",
+        "findings_count": 5,
+        "summary": "No critical type-confusion vulnerabilities found; identified 1 medium-severity null pointer dereference (corroborating the memory safety test), 3 low-severity signed/unsigned type mismatch issues, and 1 informational finding about rawCodeLength truncation."
+      }
+    ]
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "run_id": 21,
+    "test_run_result_id": 40,
+    "test_id": 35,
+    "test_name": "CWE - Memory Safety and Buffer Errors",
+    "test_description": "Checks for buffer overflows, use-after-free, null pointer dereference and integer overflow issues.",
+    "generated_at": "2026-04-25T18:47:54Z",
+    "started_at": "2026-04-25T18:47:15Z",
+    "completed_at": "2026-04-25T18:47:54Z",
+    "tokens_used": 10436,
+    "repository": "RemoteFilter",
+    "git_branch": "upload",
+    "project": "Secret project",
+    "customer": "Best Automotive s.r.o."
+  },
+  "analysis": {
+    "test_status": "findings_found",
+    "summary": "Analysis of the IRRemoteFilter Arduino sketch reveals several memory safety concerns, primarily related to potential buffer overflow in the raw IR data storage path, an unchecked null pointer dereference when reading IR data, and integer type issues with timeout counters. The most significant risk is the potential for rawCodeLength to exceed the bounds of the rawCode array when storing unknown protocol data, and the use of a received IRData pointer without null checking.",
+    "findings": [
+      {
+        "id": 1,
+        "severity": "High",
+        "title": "Potential Buffer Overflow in Raw IR Code Storage",
+        "description": "In storeCode(), when the protocol is UNKNOWN, rawCodeLength is set to IrReceiver.decodedIRData.rawDataPtr->rawlen - 1, and then IrReceiver.compensateAndStoreIRResultInArray(sStoredIRData.rawCode) is called. The rawCode buffer is declared as uint8_t rawCode[RAW_BUFFER_LENGTH]. If rawlen - 1 exceeds RAW_BUFFER_LENGTH, the compensateAndStoreIRResultInArray call will write beyond the bounds of rawCode, causing a heap/stack buffer overflow depending on where sStoredIRData is allocated (it is a global struct here, so BSS/data segment overflow).",
+        "file": "IRRemoteFilter.ino",
+        "lines": "163-172",
+        "code_snippet": "sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1;\n/*\n * Store the current raw data in a dedicated array for later usage\n */\nIrReceiver.compensateAndStoreIRResultInArray(sStoredIRData.rawCode);",
+        "impact": "If rawlen exceeds RAW_BUFFER_LENGTH, memory beyond the rawCode array will be overwritten, potentially corrupting adjacent global variables or causing undefined behavior. On embedded systems this could lead to incorrect program behavior or crashes.",
+        "remediation": "Add a bounds check before calling compensateAndStoreIRResultInArray: if (sStoredIRData.rawCodeLength > RAW_BUFFER_LENGTH) { sStoredIRData.rawCodeLength = RAW_BUFFER_LENGTH; } Alternatively, assert or log an error and return early if the raw data is too large.",
+        "finding_confidence": 72,
+        "remediation_confidence": 85
+      },
+      {
+        "id": 2,
+        "severity": "High",
+        "title": "NULL Pointer Dereference on IrReceiver.read() Return Value",
+        "description": "In the loop() function, IrReceiver.read() is called and its return value is passed directly to storeCode() without checking for NULL. If IrReceiver.read() returns NULL (which is possible if no data is available or an error occurs), storeCode() will dereference the null pointer at aIRReceivedData->flags, causing a null pointer dereference.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "103-104",
+        "code_snippet": "if (IrReceiver.available()) {\n  storeCode(IrReceiver.read());",
+        "impact": "On embedded systems, dereferencing a null pointer typically causes a crash or reset of the microcontroller, leading to denial of service.",
+        "remediation": "Store the return value of IrReceiver.read() in a local variable and check it for NULL before passing to storeCode(): IRData *data = IrReceiver.read(); if (data != NULL) { storeCode(data); }",
+        "finding_confidence": 65,
+        "remediation_confidence": 90
+      },
+      {
+        "id": 3,
+        "severity": "Medium",
+        "title": "Integer Underflow in rawCodeLength Calculation",
+        "description": "In storeCode(), rawCodeLength is assigned the value IrReceiver.decodedIRData.rawDataPtr->rawlen - 1. The type of rawlen is typically uint16_t or similar unsigned type. If rawlen is 0 (which could occur with malformed or empty IR data), subtracting 1 from an unsigned value causes an integer underflow, resulting in a very large positive value (e.g., 65535 for uint16_t). This large value is then stored in rawCodeLength (uint8_t), causing truncation, and is also used to control the subsequent array store operation.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "163",
+        "code_snippet": "sStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1;",
+        "impact": "If rawlen is 0, underflow produces a large value. When truncated to uint8_t it wraps to 255, and the subsequent compensateAndStoreIRResultInArray call may attempt to store up to 255 bytes into the rawCode buffer, potentially overflowing it.",
+        "remediation": "Add a check: if (IrReceiver.decodedIRData.rawDataPtr->rawlen == 0) { return; } before the subtraction to prevent underflow.",
+        "finding_confidence": 60,
+        "remediation_confidence": 88
+      },
+      {
+        "id": 4,
+        "severity": "Medium",
+        "title": "Signed Integer Overflow/Underflow in Timeout Counter",
+        "description": "The variable timeOut is declared as int (signed) and initialized to READ_TIMEOUT (30000). It is decremented by 1 each loop iteration in programState==1. The check timeOut==0 is used to detect timeout. However, if the decrement somehow skips zero (e.g., due to timing or if READ_TIMEOUT is set to a value that causes issues), timeOut will continue decrementing into negative values indefinitely, and the timeout condition will never trigger. Additionally, READ_TIMEOUT is declared as int but used as a large positive value; on platforms with 16-bit int (common on AVR), 30000 fits but is close to the signed 16-bit maximum (32767), and INIT_REPEAT_DELAY_TIME (29800) is also close to the limit.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "29-32, 107-117",
+        "code_snippet": "int READ_TIMEOUT = 30000;\nint INIT_REPEAT_DELAY_TIME = 29800;\n...\ntimeOut--;\nif(timeOut<INIT_REPEAT_DELAY_TIME) { ... }\nif(timeOut==0) { ... }",
+        "impact": "On AVR platforms with 16-bit int, values like 30000 are valid but leave little margin. If the timeout counter skips zero (unlikely but possible in theory), the system could hang in programState==1 indefinitely. On platforms where int is 16-bit, assigning 30000 to int is fine but assigning anything above 32767 would cause overflow.",
+        "remediation": "Use unsigned int or uint16_t/uint32_t for timeout counters. Change the timeout check from timeOut==0 to timeOut<=0 to handle the case where the counter might skip zero.",
+        "finding_confidence": 55,
+        "remediation_confidence": 80
+      },
+      {
+        "id": 5,
+        "severity": "Low",
+        "title": "Unchecked Pointer Dereference of rawDataPtr",
+        "description": "In storeCode(), when protocol is UNKNOWN, IrReceiver.decodedIRData.rawDataPtr is dereferenced to access rawlen and then passed to compensateAndStoreIRResultInArray. There is no null check on rawDataPtr before dereferencing it.",
+        "file": "IRRemoteFilter.ino",
+        "lines": "160-163",
+        "code_snippet": "Serial.print(IrReceiver.decodedIRData.rawDataPtr->rawlen - 1);\n...\nsStoredIRData.rawCodeLength = IrReceiver.decodedIRData.rawDataPtr->rawlen - 1;",
+        "impact": "If rawDataPtr is null, dereferencing it causes undefined behavior, typically a crash on embedded systems.",
+        "remediation": "Add a null check: if (IrReceiver.decodedIRData.rawDataPtr == NULL) { return; } before accessing rawDataPtr members.",
+        "finding_confidence": 50,
+        "remediation_confidence": 85
+      }
+    ],
+    "severity_counts": {
+      "critical": 0,
+      "high": 2,
+      "medium": 2,
+      "low": 1,
+      "info": 0
+    }
+  }
+}
